@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+:root {
+  --brand-dark: #112a22;
+  --brand-primary: #183d31;
+  --brand-accent: #c8f560;
+  --brand-gold: #e5a93c;
+  --bg: #f6f7f3;
+  --ink: #111815;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--ink);
+  font-family: "Inter", "Plus Jakarta Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Accessible focus ring (WCAG 2.2 AA) */
+:focus-visible {
+  outline: 3px solid var(--brand-gold);
+  outline-offset: 2px;
+}
+
+table th {
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  color: #475569;
+  white-space: nowrap;
+}
+
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  background-color: #ffffff;
+  border-color: #d6dcd8;
+  border-radius: 0.65rem;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* Prevent iOS Safari zoom on input focus while keeping desktop compact */
+@media (max-width: 640px) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+input:not([type="checkbox"]):not([type="radio"]):focus,
+select:focus,
+textarea:focus {
+  border-color: var(--brand-primary);
+  box-shadow: 0 0 0 3px rgba(24, 61, 49, 0.14);
+}
+
+button {
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+/* Hide scrollbars on horizontal pill strips while preserving touch scroll */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
