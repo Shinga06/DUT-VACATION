@@ -3,7 +3,6 @@ import { getSessionUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { quoteStay, zar } from "@/lib/pricing";
 import { ROOM_TYPE_LABEL, type RoomType } from "@/lib/constants";
-import { createBooking } from "@/app/actions/bookings";
 
 export const metadata = { title: "Complete Booking · DUT-AMP" };
 
@@ -75,7 +74,8 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
       </div>
 
       {quote.ok && (
-        <form action={createBooking} className="space-y-4">
+        <form action="/api/bookings" method="POST" className="space-y-4">
+          <input type="hidden" name="intent" value="create" />
           <input type="hidden" name="residenceSlug" value={residence.slug} />
           <input type="hidden" name="roomType" value={sp.type} />
           <input type="hidden" name="checkIn" value={sp.checkIn} />

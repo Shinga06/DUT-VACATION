@@ -213,7 +213,8 @@ export default async function BookingDetailPage({
             >
               Finish Later
             </Link>
-            <form action={submitDraftBooking}>
+            <form action="/api/bookings" method="POST">
+              <input type="hidden" name="intent" value="submit-draft" />
               <input type="hidden" name="bookingId" value={booking.id} />
               <button className="rounded-full bg-[#112a22] px-6 py-3 text-xs font-bold text-[#c8f560] shadow hover:bg-[#1a3d32]">
                 Submit Booking &amp; Proceed to Payment →
@@ -247,9 +248,11 @@ export default async function BookingDetailPage({
           <div className="grid gap-5 lg:grid-cols-2">
             {/* Option A: Instant Online Payment Gateway */}
             <form
-              action={submitPayment}
+              action="/api/bookings"
+              method="POST"
               className="flex flex-col justify-between rounded-2xl border border-neutral-200 bg-[#f6f7f3] p-5 space-y-4"
             >
+              <input type="hidden" name="intent" value="pay" />
               <input type="hidden" name="bookingId" value={booking.id} />
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -309,9 +312,12 @@ export default async function BookingDetailPage({
 
             {/* Option B: Manual EFT Bank Transfer */}
             <form
-              action={submitPayment}
+              action="/api/bookings"
+              method="POST"
+              encType="multipart/form-data"
               className="flex flex-col justify-between rounded-2xl border border-neutral-200 bg-white p-5 space-y-4"
             >
+              <input type="hidden" name="intent" value="pay" />
               <input type="hidden" name="bookingId" value={booking.id} />
               <input type="hidden" name="method" value="EFT" />
               <div className="space-y-3">
@@ -660,7 +666,8 @@ export default async function BookingDetailPage({
             <p className="text-xs text-neutral-600">
               Validates availability and recalculates cost automatically.
             </p>
-            <form action={amendBooking} className="grid gap-3 sm:grid-cols-3 text-sm">
+            <form action="/api/bookings" method="POST" className="grid gap-3 sm:grid-cols-3 text-sm">
+              <input type="hidden" name="intent" value="amend" />
               <input type="hidden" name="bookingId" value={booking.id} />
               <div>
                 <label htmlFor="am-in" className="block text-xs font-semibold">New Check-in</label>
@@ -687,7 +694,8 @@ export default async function BookingDetailPage({
             <p className="text-xs text-neutral-600">
               Cancelling releases allocated rooms/beds and calculates any eligible policy refund automatically.
             </p>
-            <form action={cancelBooking} className="space-y-3">
+            <form action="/api/bookings" method="POST" className="space-y-3">
+              <input type="hidden" name="intent" value="cancel" />
               <input type="hidden" name="bookingId" value={booking.id} />
               <input
                 name="reason"

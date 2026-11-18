@@ -99,7 +99,8 @@ export default async function GatewayCheckoutPage({
         </form>
 
         {/* Local / Instant Return Verification Button */}
-        <form action={completeGatewayPayment}>
+        <form action="/api/bookings" method="POST">
+          <input type="hidden" name="intent" value="complete-gateway" />
           <input type="hidden" name="paymentId" value={payment.id} />
           <button
             type="submit"
