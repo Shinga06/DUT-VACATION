@@ -42,9 +42,16 @@ function getActiveStepIndex(status: string): number {
   }
 }
 
-export default async function BookingDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function BookingDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ error?: string }>;
+}) {
   const user = await requireUser();
   const { id } = await params;
+  const { error } = await searchParams;
   const booking = await db.booking.findUnique({
     where: { id },
     include: {
@@ -144,6 +151,12 @@ export default async function BookingDetailPage({ params }: { params: Promise<{ 
           </div>
         )}
       </header>
+
+      {error && (
+        <div role="alert" className="rounded-[24px] border border-red-300 bg-red-50 p-4 text-sm font-medium text-red-800">
+          {error}
+        </div>
+      )}
 
       {/* Contextual Next-Step Callout Banner */}
       {booking.status === "DRAFT" && (

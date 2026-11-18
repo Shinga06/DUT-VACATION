@@ -27,9 +27,18 @@ const bookingSchema = z.object({
 
 export async function createBooking(formData: FormData) {
   const user = await requireUser();
-  const parsed = bookingSchema.safeParse(Object.fromEntries(formData));
+  const raw = Object.fromEntries(formData);
+  const backQs = new URLSearchParams({
+    residence: String(raw.residenceSlug ?? ""),
+    type: String(raw.roomType ?? "SINGLE"),
+    checkIn: String(raw.checkIn ?? ""),
+    checkOut: String(raw.checkOut ?? ""),
+    occupants: String(raw.occupants ?? "1"),
+  }).toString();
+
+  const parsed = bookingSchema.safeParse(raw);
   if (!parsed.success) {
-    throw new Error("Please complete all required fields and accept the residence rules.");
+    redirect(`/book?${backQs}&error=${encodeURIComponent("Please complete all required fields and accept the residence rules.")}`);
   }
   const d = parsed.data;
   const checkIn = new Date(d.checkIn);
@@ -42,7 +51,7 @@ export async function createBooking(formData: FormData) {
     const periods = await db.bookingPeriod.findMany({ where: { isActive: true } });
     const inside = periods.some((p) => checkIn >= p.startDate && checkOut <= p.endDate);
     if (!inside) {
-      throw new Error("Public bookings are only permitted within approved June and December holiday periods.");
+      redirect(`/book?${backQs}&error=${encodeURIComponent("Public bookings are only permitted within approved June and December holiday periods.")}`);
     }
   }
 
@@ -52,7 +61,7 @@ export async function createBooking(formData: FormData) {
     .filter((r) => r.type === d.roomType)
     .reduce((sum, r) => sum + r.freeBeds, 0);
   if (freeBedsForType < d.occupants) {
-    throw new Error(`Insufficient availability: only ${freeBedsForType} beds free for this room type.`);
+    redirect(`/book?${backQs}&error=${encodeURIComponent(`Insufficient availability: only ${freeBedsForType} beds free for this room type.`)}`);
   }
 
   // FR-020 / BR-010: Lock in agreed price snapshot
@@ -63,7 +72,9 @@ export async function createBooking(formData: FormData) {
     checkOut,
     occupants: d.occupants,
   });
-  if (!quote.ok) throw new Error(quote.error);
+  if (!quote.ok) {
+    redirect(`/book?${backQs}&error=${encodeURIComponent(quote.error)}`);
+  }
 
   const dbUser = await db.user.findUniqueOrThrow({ where: { id: user.id } });
   const isDraft = formData.get("submitMode") === "DRAFT";
@@ -148,7 +159,7 @@ export async function submitDraftBooking(formData: FormData) {
     .filter((r) => !booking.roomType || r.type === booking.roomType)
     .reduce((sum, r) => sum + r.freeBeds, 0);
   if (freeBeds < booking.occupants) {
-    throw new Error(`Cannot submit draft: only ${freeBeds} beds are available for the selected dates.`);
+    redirect(`/account/bookings/${bookingId}?error=${encodeURIComponent(`Cannot submit draft: only ${freeBeds} beds are available for the selected dates.`)}`);
   }
 
   const needsReview =
@@ -233,8 +244,10 @@ export async function submitPayment(formData: FormData) {
   let proofUrl = String(formData.get("proofUrl") ?? "").trim() || null;
 
   const booking = await db.booking.findUniqueOrThrow({ where: { id: bookingId } });
-  if (booking.userId !== user.id) throw new Error("Unauthorised");
-  if (!amount || amount <= 0) throw new Error("Enter a valid payment amount.");
+  if (booking.userId !== user.id) redirect("/account");
+  if (!amount || amount <= 0) {
+    redirect(`/account/bookings/${bookingId}?error=${encodeURIComponent("Enter a valid payment amount.")}`);
+  }
 
   const reference = `${booking.reference ?? booking.id.slice(0, 8)}-PAY`;
 
@@ -266,11 +279,16 @@ export async function submitPayment(formData: FormData) {
   if (popFile instanceof File && popFile.size > 0) {
     const ext = path.extname(popFile.name).toLowerCase() || ".pdf";
     const safeName = `${booking.reference ?? booking.id}-${Date.now()}${ext}`.replace(/[^a-zA-Z0-9._-]/g, "");
-    const dir = path.join(process.cwd(), "public", "uploads", "pop");
-    await fs.mkdir(dir, { recursive: true });
-    const bytes = Buffer.from(await popFile.arrayBuffer());
-    await fs.writeFile(path.join(dir, safeName), bytes);
-    proofUrl = `/uploads/pop/${safeName}`;
+    try {
+      const dir = path.join(process.cwd(), "public", "uploads", "pop");
+      await fs.mkdir(dir, { recursive: true });
+      const bytes = Buffer.from(await popFile.arrayBuffer());
+      await fs.writeFile(path.join(dir, safeName), bytes);
+      proofUrl = `/uploads/pop/${safeName}`;
+    } catch {
+      // Fallback for serverless read-only public directory (e.g. Vercel)
+      proofUrl = proofUrl || `Uploaded: ${popFile.name} (${Math.max(1, Math.ceil(popFile.size / 1024))} KB)`;
+    }
   }
 
   await db.payment.create({
@@ -499,10 +517,12 @@ export async function replyToInfoRequest(formData: FormData) {
   const user = await requireUser();
   const bookingId = String(formData.get("bookingId"));
   const reply = String(formData.get("reply") ?? "").trim();
-  if (!reply) throw new Error("Please enter your response.");
+  if (!reply) {
+    redirect(`/account/bookings/${bookingId}?error=${encodeURIComponent("Please enter your response.")}`);
+  }
 
   const before = await db.booking.findUniqueOrThrow({ where: { id: bookingId } });
-  if (before.userId !== user.id) throw new Error("Unauthorised");
+  if (before.userId !== user.id) redirect("/account");
 
   const noteEntry = `[Guest Reply: ${reply}]`;
   const notes = before.notes ? `${before.notes} | ${noteEntry}` : noteEntry;
@@ -641,7 +661,7 @@ export async function amendBooking(formData: FormData) {
     .filter((r) => !before.roomType || r.type === before.roomType)
     .reduce((sum, r) => sum + r.freeBeds, 0);
   if (freeBeds < newOccupants) {
-    throw new Error(`Cannot amend: only ${freeBeds} beds available for the requested dates/occupants.`);
+    redirect(`/account/bookings/${bookingId}?error=${encodeURIComponent(`Cannot amend: only ${freeBeds} beds available for the requested dates/occupants.`)}`);
   }
 
   // Recalculate cost (FR-080)
@@ -652,7 +672,9 @@ export async function amendBooking(formData: FormData) {
     checkOut: newCheckOut,
     occupants: newOccupants,
   });
-  if (!quote.ok) throw new Error(quote.error);
+  if (!quote.ok) {
+    redirect(`/account/bookings/${bookingId}?error=${encodeURIComponent(quote.error)}`);
+  }
 
   // Release old allocations and re-allocate if confirmed/approved
   await db.allocation.updateMany({ where: { bookingId }, data: { isActive: false } });
@@ -719,7 +741,9 @@ export async function uploadDelegatesCsv(formData: FormData) {
   if (file instanceof File && file.size > 0) {
     csvText = (await file.text()).trim();
   }
-  if (!csvText) throw new Error("Provide CSV rows or upload a CSV file.");
+  if (!csvText) {
+    redirect(`/account/bookings/${bookingId}?error=${encodeURIComponent("Provide CSV rows or upload a CSV file.")}`);
+  }
 
   const lines = csvText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const existingKeys = new Set(
@@ -840,7 +864,9 @@ export async function manualAllocateRoom(formData: FormData) {
 
   const takenBeds = new Set(room.allocations.map((a) => a.bedId));
   const freeBed = room.beds.find((b) => !takenBeds.has(b.id));
-  if (!freeBed) throw new Error(`Room ${room.roomNumber} has no free beds.`);
+  if (!freeBed) {
+    redirect(`/admin/bookings?error=${encodeURIComponent(`Room ${room.roomNumber} has no free beds.`)}`);
+  }
 
   const created = await db.allocation.create({
     data: {

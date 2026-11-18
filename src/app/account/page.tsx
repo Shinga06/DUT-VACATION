@@ -10,10 +10,10 @@ export const metadata = { title: "My Account · DUT-AMP" };
 export default async function AccountPage({
   searchParams,
 }: {
-  searchParams: Promise<{ denied?: string; verified?: string; saved?: string }>;
+  searchParams: Promise<{ denied?: string; verified?: string; saved?: string; error?: string }>;
 }) {
   const user = await requireUser();
-  const { denied, verified, saved } = await searchParams;
+  const { denied, verified, saved, error } = await searchParams;
   const [dbUser, bookings] = await Promise.all([
     db.user.findUniqueOrThrow({ where: { id: user.id } }),
     db.booking.findMany({
@@ -81,6 +81,11 @@ export default async function AccountPage({
       </header>
 
       {/* Alerts */}
+      {error && (
+        <div role="alert" className="rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-800">
+          {error}
+        </div>
+      )}
       {denied && (
         <div role="alert" className="rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-800">
           You do not have permission to access that administrative page.

@@ -22,11 +22,16 @@ export const viewport: Viewport = {
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const user = await getSessionUser();
   const isStaff = user ? hasPermission(user.permissions, "dashboard.view") : false;
-  const notifCount = user
-    ? await db.notification.count({
+  let notifCount = 0;
+  if (user) {
+    try {
+      notifCount = await db.notification.count({
         where: isStaff ? {} : { toEmail: user.email },
-      })
-    : 0;
+      });
+    } catch {
+      notifCount = 0;
+    }
+  }
 
   return (
     <html lang="en">

@@ -1,7 +1,19 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  serverExternalPackages: ["@prisma/client", "prisma", "bcryptjs"],
+  outputFileTracingIncludes: {
+    "/*": [
+      "./prisma/dev.db",
+      "./node_modules/.prisma/client/**/*",
+      "./node_modules/@prisma/client/**/*",
+    ],
+    "/**": [
+      "./prisma/dev.db",
+      "./node_modules/.prisma/client/**/*",
+      "./node_modules/@prisma/client/**/*",
+    ],
+  },
   turbopack: {
     rules: {
       "*.css": {

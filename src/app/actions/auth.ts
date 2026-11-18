@@ -126,7 +126,9 @@ export async function updateProfile(formData: FormData) {
   const lastName = String(formData.get("lastName") ?? "").trim();
   const phone = String(formData.get("phone") ?? "").trim() || null;
   const institution = String(formData.get("institution") ?? "").trim() || null;
-  if (!firstName || !lastName) throw new Error("First and last name are required.");
+  if (!firstName || !lastName) {
+    redirect(`/account?error=${encodeURIComponent("First and last name are required.")}`);
+  }
 
   const before = await db.user.findUniqueOrThrow({ where: { id: sessionUser.id } });
   const after = await db.user.update({

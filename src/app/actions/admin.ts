@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { z } from "zod";
 import { db } from "@/lib/db";
 import { audit, hashPassword, requirePermission } from "@/lib/auth";
@@ -329,7 +330,9 @@ export async function createCustomRole(formData: FormData) {
   const actor = await requirePermission("roles.manage");
   const name = String(formData.get("name") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim() || null;
-  if (!name) throw new Error("Role name is required.");
+  if (!name) {
+    redirect(`/admin/users?error=${encodeURIComponent("Role name is required.")}`);
+  }
 
   const selected = formData
     .getAll("permissions")
@@ -374,7 +377,9 @@ export async function createCancellationPolicy(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   const daysBeforeStay = z.coerce.number().int().min(0).parse(formData.get("daysBeforeStay"));
   const refundPercent = z.coerce.number().min(0).max(100).parse(formData.get("refundPercent"));
-  if (!name) throw new Error("Policy name is required.");
+  if (!name) {
+    redirect(`/admin/pricing?error=${encodeURIComponent("Policy name is required.")}`);
+  }
 
   const policy = await db.cancellationPolicy.create({
     data: { name, daysBeforeStay, refundPercent },
@@ -423,7 +428,9 @@ export async function updateResidence(formData: FormData) {
     .join(",");
   const photos = String(formData.get("photos") ?? "").trim();
 
-  if (!name || !description) throw new Error("Residence name and description are required.");
+  if (!name || !description) {
+    redirect(`/admin/residences?error=${encodeURIComponent("Residence name and description are required.")}`);
+  }
 
   const before = await db.residence.findUniqueOrThrow({ where: { id } });
   const after = await db.residence.update({
@@ -494,13 +501,13 @@ export async function createStaffUser(formData: FormData) {
   const scopedResidenceId = String(formData.get("scopedResidenceId") ?? "").trim() || null;
 
   if (!firstName || !lastName || !email || !roleId) {
-    throw new Error("First name, last name, email, and role are required.");
+    redirect(`/admin/users?error=${encodeURIComponent("First name, last name, email, and role are required.")}`);
   }
   if (password.length < 10) {
-    throw new Error("Initial password must be at least 10 characters.");
+    redirect(`/admin/users?error=${encodeURIComponent("Initial password must be at least 10 characters.")}`);
   }
   if (await db.user.findUnique({ where: { email } })) {
-    throw new Error(`An account with email ${email} already exists.`);
+    redirect(`/admin/users?error=${encodeURIComponent(`An account with email ${email} already exists.`)}`);
   }
 
   const created = await db.user.create({

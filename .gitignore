@@ -40,6 +40,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# local database
-*.db
+# local database (keep seeded prisma/dev.db for zero-config deployments)
 *.db-journal
+!prisma/dev.db

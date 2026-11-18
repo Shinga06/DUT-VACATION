@@ -13,8 +13,13 @@ import {
 
 export const metadata = { title: "Bookings & Payments · Admin · DUT-AMP" };
 
-export default async function AdminBookingsPage() {
+export default async function AdminBookingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
   const user = await requirePermission("bookings.view");
+  const { error } = await searchParams;
   const canReview = hasPermission(user.permissions, "bookings.review");
   const canVerify = hasPermission(user.permissions, "payments.verify");
   const canCheckIn = hasPermission(user.permissions, "checkin.manage");
@@ -59,6 +64,12 @@ export default async function AdminBookingsPage() {
           Organised by operational workflow stage: 1. Housing Review → 2. Finance EFT Verification → 3. Preferences &amp; Room Allocation → 4. Check-In / Check-Out.
         </p>
       </div>
+
+      {error && (
+        <div role="alert" className="rounded-2xl border border-red-300 bg-red-50 p-4 text-sm font-medium text-red-800">
+          {error}
+        </div>
+      )}
 
       {/* QUEUE 1: Student Housing Review Queue (PENDING_REVIEW) */}
       {canReview && pendingReviews.length > 0 && (

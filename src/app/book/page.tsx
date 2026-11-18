@@ -13,12 +13,15 @@ type Params = {
   checkIn?: string;
   checkOut?: string;
   occupants?: string;
+  error?: string;
 };
 
 export default async function BookPage({ searchParams }: { searchParams: Promise<Params> }) {
   const sp = await searchParams;
   const user = await getSessionUser();
-  const qs = new URLSearchParams(sp as Record<string, string>).toString();
+  const qs = new URLSearchParams(
+    Object.fromEntries(Object.entries(sp).filter(([k, v]) => k !== "error" && Boolean(v))) as Record<string, string>,
+  ).toString();
   if (!user) redirect(`/login?next=${encodeURIComponent(`/book?${qs}`)}`);
 
   if (!sp.residence || !sp.type || !sp.checkIn || !sp.checkOut) notFound();
@@ -46,6 +49,12 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
         </span>
         <h1 className="mt-2 text-2xl font-bold text-[#112a22]">Complete Your Booking</h1>
       </div>
+
+      {sp.error && (
+        <div role="alert" className="rounded-2xl border border-red-300 bg-red-50 p-4 text-sm font-medium text-red-800">
+          {sp.error}
+        </div>
+      )}
 
       <div className="rounded-2xl bg-[#112a22] p-5 text-white space-y-1.5">
         <p className="font-bold text-lg text-[#c8f560]">{residence.name}</p>

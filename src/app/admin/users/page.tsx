@@ -12,8 +12,13 @@ export const metadata = { title: "Users & Roles · Admin · DUT-AMP" };
 
 const input = "mt-1 w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm";
 
-export default async function AdminUsersPage() {
+export default async function AdminUsersPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
   await requirePermission("users.manage");
+  const { error } = await searchParams;
   const [users, roles, residences] = await Promise.all([
     db.user.findMany({ orderBy: { createdAt: "desc" }, include: { role: true } }),
     db.role.findMany({ orderBy: { name: "asc" } }),
@@ -30,6 +35,12 @@ export default async function AdminUsersPage() {
           </p>
         </div>
       </div>
+
+      {error && (
+        <div role="alert" className="rounded-2xl border border-red-300 bg-red-50 p-4 text-sm font-medium text-red-800">
+          {error}
+        </div>
+      )}
 
       {/* Direct Staff / User Account Onboarding Form */}
       <section className="rounded-[26px] border border-black/5 bg-white p-6 shadow-[0_8px_30px_rgb(0,0,0,0.03)] space-y-4">
