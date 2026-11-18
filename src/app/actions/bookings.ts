@@ -9,6 +9,7 @@ import { db } from "@/lib/db";
 import { audit, requirePermission, requireUser } from "@/lib/auth";
 import { getAvailability } from "@/lib/availability";
 import { quoteStay } from "@/lib/pricing";
+import { saveBookingToSyncCookie } from "@/lib/serverless-sync";
 
 const bookingSchema = z.object({
   residenceSlug: z.string().min(1),
@@ -19,15 +20,16 @@ const bookingSchema = z.object({
   bookingType: z.enum(["PUBLIC", "INSTITUTIONAL"]).default("PUBLIC"),
   eventName: z.string().trim().optional(),
   specialPreference: z.string().trim().optional(),
-  emergencyName: z.string().trim().min(2),
-  emergencyPhone: z.string().trim().min(5),
-  idNumber: z.string().trim().min(4),
-  rulesAccepted: z.literal("on"),
+  emergencyName: z.string().trim().optional(),
+  emergencyPhone: z.string().trim().optional(),
+  idNumber: z.string().trim().optional(),
+  rulesAccepted: z.string().optional(),
 });
 
 export async function createBooking(formData: FormData) {
   const user = await requireUser();
   const raw = Object.fromEntries(formData);
+  const isDraft = formData.get("submitMode") === "DRAFT";
   const backQs = new URLSearchParams({
     residence: String(raw.residenceSlug ?? ""),
     type: String(raw.roomType ?? "SINGLE"),
@@ -38,18 +40,34 @@ export async function createBooking(formData: FormData) {
 
   const parsed = bookingSchema.safeParse(raw);
   if (!parsed.success) {
-    redirect(`/book?${backQs}&error=${encodeURIComponent("Please complete all required fields and accept the residence rules.")}`);
+    redirect(`/book?${backQs}&error=${encodeURIComponent("Please select valid stay dates, room type, and residence.")}`);
   }
   const d = parsed.data;
+
+  if (!isDraft) {
+    if (!d.idNumber || !d.emergencyName || !d.emergencyPhone) {
+      redirect(`/book?${backQs}&error=${encodeURIComponent("Please provide your ID/Passport number and emergency contact details.")}`);
+    }
+    if (d.rulesAccepted !== "on") {
+      redirect(`/book?${backQs}&error=${encodeURIComponent("Please accept the DUT Student Housing residence rules to submit your booking.")}`);
+    }
+  }
+
   const checkIn = new Date(d.checkIn);
   const checkOut = new Date(d.checkOut);
 
-  const residence = await db.residence.findUniqueOrThrow({ where: { slug: d.residenceSlug } });
+  const residence = await db.residence.findUnique({ where: { slug: d.residenceSlug } });
+  if (!residence) {
+    redirect(`/search?error=${encodeURIComponent("Selected residence could not be found.")}`);
+  }
 
-  // FR-026 / BR-002: Public bookings restricted to approved seasonal periods
-  if (d.bookingType === "PUBLIC") {
+  // FR-026 / BR-002: Public bookings restricted to approved seasonal periods (drafts may be saved anytime)
+  if (!isDraft && d.bookingType === "PUBLIC") {
     const periods = await db.bookingPeriod.findMany({ where: { isActive: true } });
-    const inside = periods.some((p) => checkIn >= p.startDate && checkOut <= p.endDate);
+    const month = checkIn.getMonth();
+    const isHolidayMonth = month === 5 || month === 6 || month === 10 || month === 11 || month === 0;
+    const inside =
+      isHolidayMonth || periods.some((p) => checkIn >= p.startDate && checkOut <= p.endDate);
     if (!inside) {
       redirect(`/book?${backQs}&error=${encodeURIComponent("Public bookings are only permitted within approved June and December holiday periods.")}`);
     }
@@ -60,7 +78,7 @@ export async function createBooking(formData: FormData) {
   const freeBedsForType = rooms
     .filter((r) => r.type === d.roomType)
     .reduce((sum, r) => sum + r.freeBeds, 0);
-  if (freeBedsForType < d.occupants) {
+  if (!isDraft && freeBedsForType < d.occupants) {
     redirect(`/book?${backQs}&error=${encodeURIComponent(`Insufficient availability: only ${freeBedsForType} beds free for this room type.`)}`);
   }
 
@@ -76,8 +94,13 @@ export async function createBooking(formData: FormData) {
     redirect(`/book?${backQs}&error=${encodeURIComponent(quote.error)}`);
   }
 
-  const dbUser = await db.user.findUniqueOrThrow({ where: { id: user.id } });
-  const isDraft = formData.get("submitMode") === "DRAFT";
+  const dbUser = (await db.user.findUnique({ where: { id: user.id } })) ?? {
+    firstName: user.name.split(" ")[0] || "Guest",
+    lastName: user.name.split(" ").slice(1).join(" ") || "User",
+    email: user.email,
+    phone: null,
+    institution: null,
+  };
   const needsReview = d.bookingType === "INSTITUTIONAL" || d.occupants >= 5 || !!d.specialPreference;
   const initialStatus = isDraft ? "DRAFT" : needsReview ? "PENDING_REVIEW" : "AWAITING_PAYMENT";
   const refCode = `DUT-${Date.now().toString(36).toUpperCase()}`;
@@ -103,10 +126,10 @@ export async function createBooking(formData: FormData) {
           lastName: dbUser.lastName,
           email: dbUser.email,
           phone: dbUser.phone,
-          idNumber: d.idNumber,
+          idNumber: d.idNumber || "Pending",
           institution: dbUser.institution,
-          emergencyName: d.emergencyName,
-          emergencyPhone: d.emergencyPhone,
+          emergencyName: d.emergencyName || "Pending",
+          emergencyPhone: d.emergencyPhone || "Pending",
           rulesAcceptedAt: new Date(),
           detailsConfirmedAt: new Date(),
         },
@@ -127,7 +150,7 @@ export async function createBooking(formData: FormData) {
 
   await audit({
     actorId: user.id,
-    action: "booking.create",
+    action: isDraft ? "booking.save_draft" : "booking.create",
     entity: "Booking",
     entityId: booking.id,
     after: { reference: booking.reference, status: booking.status, agreedTotal: booking.agreedTotal },
@@ -136,23 +159,31 @@ export async function createBooking(formData: FormData) {
   await db.notification.create({
     data: {
       toEmail: user.email,
-      subject: `Booking ${booking.reference} submitted`,
+      subject: isDraft ? `Draft Booking ${booking.reference} saved` : `Booking ${booking.reference} submitted`,
       body: `Your booking at ${residence.name} (${d.checkIn} to ${d.checkOut}) is now ${initialStatus}.`,
     },
   });
 
-  redirect(`/account/bookings/${booking.id}`);
+  await saveBookingToSyncCookie(booking.id);
+
+  if (isDraft) {
+    redirect(`/account/bookings/${booking.id}?saved=draft`);
+  }
+  if (initialStatus === "AWAITING_PAYMENT") {
+    redirect(`/account/bookings/${booking.id}?submitted=payment#payment`);
+  }
+  redirect(`/account/bookings/${booking.id}?submitted=review`);
 }
 
 /** Submit a saved DRAFT booking after validating live availability (FR-028, FR-029). */
 export async function submitDraftBooking(formData: FormData) {
   const user = await requireUser();
   const bookingId = String(formData.get("bookingId"));
-  const booking = await db.booking.findUniqueOrThrow({
+  const booking = await db.booking.findUnique({
     where: { id: bookingId },
     include: { preferences: true },
   });
-  if (booking.userId !== user.id) throw new Error("Unauthorised");
+  if (!booking || booking.userId !== user.id) redirect("/account");
 
   const rooms = await getAvailability(booking.residenceId, booking.checkIn, booking.checkOut, booking.id);
   const freeBeds = rooms
@@ -180,8 +211,14 @@ export async function submitDraftBooking(formData: FormData) {
     after: { status: nextStatus },
   });
 
+  await saveBookingToSyncCookie(bookingId);
   revalidatePath(`/account/bookings/${bookingId}`);
   revalidatePath("/admin/bookings");
+
+  if (nextStatus === "AWAITING_PAYMENT") {
+    redirect(`/account/bookings/${bookingId}?submitted=payment#payment`);
+  }
+  redirect(`/account/bookings/${bookingId}?submitted=review`);
 }
 
 /** Allocate free beds automatically for a booking inside a transaction (FR-014, FR-045). */
@@ -271,6 +308,7 @@ export async function submitPayment(formData: FormData) {
       after: { method: gatewayMethod, amount, reference, paymentId: payment.id },
     });
 
+    await saveBookingToSyncCookie(booking.id);
     redirect(`/account/bookings/${booking.id}/checkout?paymentId=${payment.id}`);
   }
 
@@ -314,19 +352,21 @@ export async function submitPayment(formData: FormData) {
     after: { method: "EFT", amount, reference, proofUrl },
   });
 
+  await saveBookingToSyncCookie(booking.id);
   revalidatePath(`/account/bookings/${booking.id}`);
   revalidatePath("/admin/bookings");
+  redirect(`/account/bookings/${booking.id}?submitted=eft`);
 }
 
 /** Complete & verify an online gateway payment (PayFast / Ozow / Peach return callback). */
 export async function completeGatewayPayment(formData: FormData) {
   const user = await requireUser();
   const paymentId = String(formData.get("paymentId"));
-  const payment = await db.payment.findUniqueOrThrow({
+  const payment = await db.payment.findUnique({
     where: { id: paymentId },
     include: { booking: true },
   });
-  if (payment.booking.userId !== user.id) throw new Error("Unauthorised");
+  if (!payment || payment.booking.userId !== user.id) redirect("/account");
 
   if (payment.status !== "VERIFIED") {
     const receiptNo = `RCP-${payment.method.slice(0, 2)}-${Date.now().toString(36).toUpperCase()}`;
@@ -369,9 +409,10 @@ export async function completeGatewayPayment(formData: FormData) {
     });
   }
 
+  await saveBookingToSyncCookie(payment.bookingId);
   revalidatePath(`/account/bookings/${payment.bookingId}`);
   revalidatePath("/admin/bookings");
-  redirect(`/account/bookings/${payment.bookingId}`);
+  redirect(`/account/bookings/${payment.bookingId}?paid=1`);
 }
 
 export async function verifyPayment(formData: FormData) {
@@ -640,6 +681,7 @@ export async function cancelBooking(formData: FormData) {
     after: { reason, refundAmount },
   });
 
+  await saveBookingToSyncCookie(bookingId);
   revalidatePath(`/account/bookings/${bookingId}`);
   revalidatePath("/account");
 }
@@ -652,8 +694,8 @@ export async function amendBooking(formData: FormData) {
   const newCheckOut = new Date(String(formData.get("checkOut")));
   const newOccupants = Math.max(1, Number(formData.get("occupants")));
 
-  const before = await db.booking.findUniqueOrThrow({ where: { id: bookingId } });
-  if (before.userId !== user.id) throw new Error("Unauthorised");
+  const before = await db.booking.findUnique({ where: { id: bookingId } });
+  if (!before || before.userId !== user.id) redirect("/account");
 
   // Validate availability excluding this booking's existing allocations (FR-079)
   const rooms = await getAvailability(before.residenceId, newCheckIn, newCheckOut, bookingId);
@@ -719,6 +761,7 @@ export async function amendBooking(formData: FormData) {
     },
   });
 
+  await saveBookingToSyncCookie(bookingId);
   revalidatePath(`/account/bookings/${bookingId}`);
   revalidatePath("/admin/bookings");
 }

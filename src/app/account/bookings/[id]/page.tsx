@@ -47,11 +47,11 @@ export default async function BookingDetailPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ error?: string }>;
+  searchParams: Promise<{ error?: string; saved?: string; submitted?: string; paid?: string }>;
 }) {
   const user = await requireUser();
   const { id } = await params;
-  const { error } = await searchParams;
+  const { error, saved, submitted, paid } = await searchParams;
   const booking = await db.booking.findUnique({
     where: { id },
     include: {
@@ -158,6 +158,41 @@ export default async function BookingDetailPage({
         </div>
       )}
 
+      {saved === "draft" && (
+        <div role="status" className="rounded-[24px] border border-emerald-300 bg-emerald-50 p-4 text-sm font-medium text-emerald-950">
+          <strong>Draft Booking Saved:</strong> Your booking details have been saved as a draft. You can finish and submit
+          your booking below whenever you are ready.
+        </div>
+      )}
+
+      {submitted === "payment" && (
+        <div role="status" className="rounded-[24px] border border-emerald-300 bg-emerald-50 p-4 text-sm font-medium text-emerald-950">
+          <strong>Booking Submitted ({booking.reference}):</strong> Please complete your payment below to confirm your
+          stay and lock in your room &amp; bed allocation.
+        </div>
+      )}
+
+      {submitted === "review" && (
+        <div role="status" className="rounded-[24px] border border-emerald-300 bg-emerald-50 p-4 text-sm font-medium text-emerald-950">
+          <strong>Request Submitted ({booking.reference}):</strong> Your booking request has been queued for Student
+          Housing review. Once approved, payment will be unlocked automatically.
+        </div>
+      )}
+
+      {submitted === "eft" && (
+        <div role="status" className="rounded-[24px] border border-emerald-300 bg-emerald-50 p-4 text-sm font-medium text-emerald-950">
+          <strong>EFT Proof of Payment Received:</strong> Your payment reference has been logged for Finance Officer
+          verification.
+        </div>
+      )}
+
+      {paid === "1" && (
+        <div role="status" className="rounded-[24px] border border-emerald-300 bg-emerald-50 p-4 text-sm font-medium text-emerald-950">
+          <strong>Payment Verified &amp; Booking Confirmed!</strong> Your official receipt has been issued and your room
+          &amp; bed allocation is confirmed below.
+        </div>
+      )}
+
       {/* Contextual Next-Step Callout Banner */}
       {booking.status === "DRAFT" && (
         <section className="rounded-[24px] border border-amber-300 bg-amber-50 p-6 flex flex-wrap items-center justify-between gap-4">
@@ -171,12 +206,179 @@ export default async function BookingDetailPage({
               Submit when ready.
             </p>
           </div>
-          <form action={submitDraftBooking}>
-            <input type="hidden" name="bookingId" value={booking.id} />
-            <button className="rounded-full bg-[#112a22] px-6 py-3 text-xs font-bold text-[#c8f560] shadow hover:bg-[#1a3d32]">
-              Submit Booking Now →
-            </button>
-          </form>
+          <div className="flex flex-wrap items-center gap-2.5">
+            <Link
+              href="/account"
+              className="rounded-full border border-neutral-300 bg-white px-4 py-2.5 text-xs font-semibold text-[#112a22] hover:bg-neutral-50"
+            >
+              Finish Later
+            </Link>
+            <form action={submitDraftBooking}>
+              <input type="hidden" name="bookingId" value={booking.id} />
+              <button className="rounded-full bg-[#112a22] px-6 py-3 text-xs font-bold text-[#c8f560] shadow hover:bg-[#1a3d32]">
+                Submit Booking &amp; Proceed to Payment →
+              </button>
+            </form>
+          </div>
+        </section>
+      )}
+
+      {/* Step 3: Payment Section (Shown right at the top when in AWAITING_PAYMENT / APPROVED / CONFIRMED with balance > 0) */}
+      {canPay && (
+        <section
+          id="payment"
+          className="rounded-[26px] border-2 border-[#112a22] bg-white p-6 shadow-[0_8px_30px_rgb(0,0,0,0.05)] space-y-5"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-neutral-100 pb-4">
+            <div>
+              <span className="inline-block rounded-full bg-[#c8f560] px-3 py-0.5 text-xs font-bold text-[#112a22]">
+                Step 3 · Action Required · Complete Payment
+              </span>
+              <h2 className="mt-1 text-xl font-bold text-[#112a22]">
+                Select Your Payment Method ({zar(balance)} Due)
+              </h2>
+              <p className="text-xs text-neutral-600 mt-0.5">
+                Choose instant online payment for immediate booking confirmation and automatic bed allocation, or upload
+                your manual EFT Proof of Payment.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-5 lg:grid-cols-2">
+            {/* Option A: Instant Online Payment Gateway */}
+            <form
+              action={submitPayment}
+              className="flex flex-col justify-between rounded-2xl border border-neutral-200 bg-[#f6f7f3] p-5 space-y-4"
+            >
+              <input type="hidden" name="bookingId" value={booking.id} />
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="rounded-full bg-[#112a22] px-3 py-0.5 text-[11px] font-bold text-[#c8f560]">
+                    Instant Confirmation
+                  </span>
+                  <span className="text-xs font-semibold text-neutral-500">Card · Instant EFT · SnapScan</span>
+                </div>
+                <h3 className="text-base font-bold text-[#112a22]">Option 1: Pay Online Now</h3>
+                <p className="text-xs text-neutral-600 leading-relaxed">
+                  Pay securely via DUT&apos;s authorised online payment gateway. Your official receipt and room/bed
+                  allocation are issued immediately upon authorisation.
+                </p>
+
+                <div className="grid gap-3 sm:grid-cols-2 pt-1">
+                  <div>
+                    <label htmlFor="gw-method" className="block text-xs font-bold uppercase tracking-wider text-neutral-500">
+                      Online Gateway
+                    </label>
+                    <select
+                      id="gw-method"
+                      name="method"
+                      defaultValue="PAYFAST"
+                      className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm font-medium"
+                    >
+                      <option value="PAYFAST">PayFast (Card / Instant EFT)</option>
+                      <option value="OZOW">Ozow Instant EFT</option>
+                      <option value="PEACH">Peach Payments (Card)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="gw-amount" className="block text-xs font-bold uppercase tracking-wider text-neutral-500">
+                      Amount (ZAR)
+                    </label>
+                    <input
+                      id="gw-amount"
+                      name="amount"
+                      type="number"
+                      step="0.01"
+                      min={1}
+                      max={balance}
+                      defaultValue={balance}
+                      required
+                      className="mt-1 w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 text-sm font-medium"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full rounded-full bg-[#112a22] px-5 py-3 text-xs font-bold text-[#c8f560] shadow hover:bg-[#1a3d32] transition"
+              >
+                Proceed to Online Gateway Checkout →
+              </button>
+            </form>
+
+            {/* Option B: Manual EFT Bank Transfer */}
+            <form
+              action={submitPayment}
+              className="flex flex-col justify-between rounded-2xl border border-neutral-200 bg-white p-5 space-y-4"
+            >
+              <input type="hidden" name="bookingId" value={booking.id} />
+              <input type="hidden" name="method" value="EFT" />
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="rounded-full bg-[#e6ece8] px-3 py-0.5 text-[11px] font-bold text-[#112a22]">
+                    Bank Transfer · Finance Verification
+                  </span>
+                  <span className="font-mono text-xs font-bold text-[#112a22]">Ref: {booking.reference}-PAY</span>
+                </div>
+                <h3 className="text-base font-bold text-[#112a22]">Option 2: Manual EFT &amp; Proof Upload</h3>
+                <p className="text-xs text-neutral-600 leading-relaxed">
+                  Transfer to <strong>DUT Student Housing (Standard Bank · Acc: 050012345 · Branch: 040026)</strong> using
+                  reference <strong className="font-mono text-[#112a22]">{booking.reference}-PAY</strong> and upload your
+                  Proof of Payment below.
+                </p>
+
+                <div className="grid gap-3 sm:grid-cols-2 pt-1">
+                  <div>
+                    <label htmlFor="eft-amount" className="block text-xs font-bold uppercase tracking-wider text-neutral-500">
+                      EFT Amount (ZAR)
+                    </label>
+                    <input
+                      id="eft-amount"
+                      name="amount"
+                      type="number"
+                      step="0.01"
+                      min={1}
+                      max={balance}
+                      defaultValue={balance}
+                      required
+                      className="mt-1 w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm font-medium"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="proofUrl" className="block text-xs font-bold uppercase tracking-wider text-neutral-500">
+                      Bank Reference / POP Note
+                    </label>
+                    <input
+                      id="proofUrl"
+                      name="proofUrl"
+                      placeholder="e.g. FNB POP #98231"
+                      className="mt-1 w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label htmlFor="popFile" className="block text-xs font-bold uppercase tracking-wider text-neutral-500">
+                      Attach Proof of Payment (.pdf / .png / .jpg)
+                    </label>
+                    <input
+                      id="popFile"
+                      name="popFile"
+                      type="file"
+                      accept=".pdf,.png,.jpg,.jpeg"
+                      className="mt-1 w-full text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full rounded-full border border-[#112a22] bg-[#f2f4ef] px-5 py-3 text-xs font-bold text-[#112a22] hover:bg-neutral-200/70 transition"
+              >
+                Upload EFT Proof of Payment →
+              </button>
+            </form>
+          </div>
         </section>
       )}
 
@@ -258,86 +460,6 @@ export default async function BookingDetailPage({
           )}
         </div>
       </section>
-
-      {/* Step 3: Payment Section (Only shown when in AWAITING_PAYMENT / APPROVED / CONFIRMED with balance > 0) */}
-      {canPay && (
-        <section className="rounded-[26px] border-2 border-[#112a22] bg-white p-6 shadow-[0_8px_30px_rgb(0,0,0,0.05)] space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <span className="inline-block rounded-full bg-[#c8f560] px-3 py-0.5 text-xs font-bold text-[#112a22]">
-                Action Required · Complete Payment
-              </span>
-              <h2 className="mt-1 text-lg font-bold text-[#112a22]">Make a Payment</h2>
-              <p className="text-xs text-neutral-600 mt-0.5">
-                Pay online via PayFast / Ozow / Peach for instant confirmation, or upload your EFT Proof of Payment using
-                reference <strong className="font-mono text-[#112a22]">{booking.reference}-PAY</strong>.
-              </p>
-            </div>
-          </div>
-          <form action={submitPayment} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-            <input type="hidden" name="bookingId" value={booking.id} />
-            <div>
-              <label htmlFor="method" className="block text-xs font-bold uppercase tracking-wider text-neutral-500">
-                Payment Gateway / Method
-              </label>
-              <select
-                id="method"
-                name="method"
-                className="mt-1 w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm font-medium"
-              >
-                <option value="PAYFAST">PayFast Gateway (Card / Instant EFT)</option>
-                <option value="OZOW">Ozow Instant EFT Gateway</option>
-                <option value="PEACH">Peach Payments Gateway</option>
-                <option value="EFT">Manual EFT Bank Transfer (Upload POP)</option>
-              </select>
-            </div>
-            <div>
-              <label htmlFor="amount" className="block text-xs font-bold uppercase tracking-wider text-neutral-500">
-                Amount (ZAR)
-              </label>
-              <input
-                id="amount"
-                name="amount"
-                type="number"
-                step="0.01"
-                min={1}
-                max={balance}
-                defaultValue={balance}
-                required
-                className="mt-1 w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm font-medium"
-              />
-            </div>
-            <div>
-              <label htmlFor="popFile" className="block text-xs font-bold uppercase tracking-wider text-neutral-500">
-                Upload EFT Proof (.pdf/.png/.jpg)
-              </label>
-              <input
-                id="popFile"
-                name="popFile"
-                type="file"
-                accept=".pdf,.png,.jpg,.jpeg"
-                className="mt-1.5 w-full text-xs"
-              />
-            </div>
-            <div>
-              <label htmlFor="proofUrl" className="block text-xs font-bold uppercase tracking-wider text-neutral-500">
-                Or Bank POP Note (EFT)
-              </label>
-              <input
-                id="proofUrl"
-                name="proofUrl"
-                placeholder="e.g. FNB POP #98231"
-                className="mt-1 w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm"
-              />
-            </div>
-            <div className="self-end">
-              <button className="w-full rounded-full bg-[#112a22] px-4 py-2.5 text-xs font-bold text-[#c8f560] hover:bg-[#1a3d32] transition">
-                Proceed to Payment →
-              </button>
-            </div>
-          </form>
-        </section>
-      )}
 
       {/* Check-in Instructions Banner (Prominent when CONFIRMED or CHECKED_IN) */}
       {["CONFIRMED", "CHECKED_IN", "AWAITING_PAYMENT", "APPROVED"].includes(booking.status) && (

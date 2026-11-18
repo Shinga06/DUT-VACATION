@@ -141,15 +141,7 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
             </span>
           </label>
 
-          <div className="flex flex-wrap items-center gap-3 pt-1">
-            <button
-              type="submit"
-              name="submitMode"
-              value="DRAFT"
-              className="rounded-full border border-neutral-300 bg-[#f6f7f3] px-5 py-3 text-xs font-bold text-[#112a22] hover:bg-neutral-200/70 transition"
-            >
-              Save as Draft (Finish Later)
-            </button>
+          <div className="flex flex-wrap items-center gap-3 pt-1 sm:flex-row-reverse">
             <button
               type="submit"
               name="submitMode"
@@ -157,6 +149,15 @@ export default async function BookPage({ searchParams }: { searchParams: Promise
               className="flex-1 rounded-full bg-[#112a22] px-5 py-3 text-sm font-bold text-[#c8f560] shadow hover:bg-[#1a3d32] transition"
             >
               {isCoordinator ? "Submit Delegation Request →" : "Submit Booking & Proceed to Payment →"}
+            </button>
+            <button
+              type="submit"
+              name="submitMode"
+              value="DRAFT"
+              formNoValidate
+              className="rounded-full border border-neutral-300 bg-[#f6f7f3] px-5 py-3 text-xs font-bold text-[#112a22] hover:bg-neutral-200/70 transition"
+            >
+              Save as Draft (Finish Later)
             </button>
           </div>
         </form>

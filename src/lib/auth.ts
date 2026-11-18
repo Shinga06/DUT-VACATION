@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
+import { syncBookingsFromCookie } from "@/lib/serverless-sync";
 import {
   LOCKOUT_MINUTES,
   MAX_FAILED_LOGINS,
@@ -30,7 +31,19 @@ export async function hashPassword(pw: string) {
 }
 
 export async function createSession(userId: string) {
-  const token = await new SignJWT({ uid: userId })
+  const user = await db.user.findUnique({
+    where: { id: userId },
+    include: { role: true },
+  });
+  const token = await new SignJWT({
+    uid: userId,
+    email: user?.email,
+    firstName: user?.firstName,
+    lastName: user?.lastName,
+    phone: user?.phone ?? null,
+    institution: user?.institution ?? null,
+    roleName: user?.role.name ?? "Public Guest",
+  })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime(`${SESSION_HOURS}h`)
@@ -53,11 +66,48 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   if (!token) return null;
   try {
     const { payload } = await jwtVerify(token, secret());
-    const user = await db.user.findUnique({
-      where: { id: String(payload.uid) },
+    const uid = String(payload.uid);
+    let user = await db.user.findUnique({
+      where: { id: uid },
       include: { role: true },
     });
+
+    // If a newly registered user lands on a fresh serverless instance, ensure their User record exists in local SQLite
+    if (!user && payload.email) {
+      const email = String(payload.email);
+      user = await db.user.findUnique({
+        where: { email },
+        include: { role: true },
+      });
+      if (!user) {
+        const desiredRole = String(payload.roleName || "Public Guest");
+        const role =
+          (await db.role.findUnique({ where: { name: desiredRole } })) ??
+          (await db.role.findFirst());
+        if (role) {
+          user = await db.user.create({
+            data: {
+              id: uid,
+              email,
+              firstName: String(payload.firstName || "Guest"),
+              lastName: String(payload.lastName || "User"),
+              phone: payload.phone ? String(payload.phone) : null,
+              institution: payload.institution ? String(payload.institution) : null,
+              passwordHash: "$2a$12$serverlesshydratedaccountplaceholderhash000000000000",
+              roleId: role.id,
+              emailVerified: true,
+            },
+            include: { role: true },
+          });
+        }
+      }
+    }
+
     if (!user || !user.isActive) return null; // FR-007: deactivated users lose access
+
+    // Reconcile any bookings created/updated in this session across serverless instances
+    await syncBookingsFromCookie();
+
     return {
       id: user.id,
       email: user.email,
